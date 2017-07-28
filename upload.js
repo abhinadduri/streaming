@@ -3,34 +3,29 @@ async function upload(event) {
   const size = file.size;
   const chunkSize = 64 * 1024 * 1024;
   const socket = new WebSocket('ws://localhost:3000/upload');
-  const PRK = await generatePRK();
-  // const key = await window.crypto.subtle.importKey(
-  //   'raw', PRK, hmac, false, ['sign']
-  // );
+  // use hardcoded values for testing
+  const ikm = new Uint8Array([0xde,0xad,0xbe,0xef,0xde,0xad,0xbe,0xef,0xde,0xad,0xbe,0xef,0xde,0xad,0xbe,0xef]);
+  const salt = new Uint8Array([1,2,3,4,5,6,1,2,3,4,5,6,1,2,3,4]);
+  const prk = await HKDF_extract(salt, ikm)
   let offset = 0;
   let index = 0;
 
   const eventHandler = async function(readEvent) {
     if (offset >= size) {
-      socket.send(PRK)
+      socket.send(prk)
       socket.close();
       return;
     }
 
-    // don't use the nonce for now, just try to encrypt and decrypt using a hard coded iv
     if (readEvent.target.error == null) {
       offset += chunkSize;
-      index += 1;
-      // let nonce = await generateNonce(key, index);
-      // console.log(new Uint8Array(nonce).toString());
       const result = readEvent.target.result;
-      const pwUtf8 = new TextEncoder().encode('my password');
-      const pwHash = await crypto.subtle.digest('SHA-256', pwUtf8); 
-      const iv = new Uint8Array([1,2,3,4,5,6,7,8,9,0,1,2]);
-      const alg = { name: 'AES-GCM', iv: iv };
-      const key = await crypto.subtle.importKey('raw', pwHash, alg, false, ['encrypt']);
-      const ctBuffer = await crypto.subtle.encrypt(alg, key, result);
-      socket.send(ctBuffer);
+      const [rawKey, nonce] = await generateNonce(prk, index);
+      const alg = { name: 'AES-GCM', iv: nonce };
+      const key = await crypto.subtle.importKey('raw', rawKey, alg, false, ['encrypt']);
+      const encrypted = await crypto.subtle.encrypt(alg, key, result);
+      index += 1;
+      socket.send(encrypted);
       readNextChunk(offset);
     } else {
       console.error(readEvent.target.error);
@@ -54,68 +49,57 @@ async function upload(event) {
 const uploadButton = document.getElementById('uploadFile');
 uploadButton.addEventListener('change', upload);
 
-function generateIKM() {
-  return window.crypto.subtle.generateKey(
-    {
-      name: 'ECDH',
-      namedCurve: 'P-256'
-    },
-    false,
-    ['deriveBits']
-  ).then(key => {
-    return window.crypto.subtle.deriveBits(
-      {
-        name: 'ECDH',
-        namedCurve: 'P-256',
-        public: key.publicKey
-      },
-      key.privateKey,
-      128
-    )
-  })
-}
-
-const hmac = { name: 'HMAC', hash: {name: 'SHA-256'} };
+const HMAC_SHA256 = { name: 'HMAC', hash: {name: 'SHA-256'}};
 const UTF8 = new TextEncoder('utf-8');
 
-function generatePRK() {
-  return generateIKM().then(bits => {
-    const salt = new Uint8Array([1,2,3,4,5,6,1,2,3,4,5,6,1,2,3,4]);//window.crypto.getRandomValues(new Uint8Array(16));
-    const ikm = new Uint8Array([1,2,3,4,5,6,1,2,3,4,5,6,1,2,3,4]);
-    
-    return window.crypto.subtle.importKey(
-      'raw',
-      salt,
-      hmac,
-      false,
-      ['sign']
-    )
-    .then(key => {
-      return window.crypto.subtle.sign(
-        { name: 'HMAC' },
-        key,
-        ikm
-      )
-    })
-  })
+function b64(arrayBuffer) {
+  return btoa(String.fromCharCode.apply(null, new Uint8Array(arrayBuffer)))
 }
 
-async function generateNonce(key, i) {
-  const NONCE_INFO = 'Content-Encoding: nonce';
-  let currentNonce = await window.crypto.subtle.sign(
-    {
-      name: 'HMAC'
-    },
+function concatArray(arrays) {
+  var size = arrays.reduce((total, a) => total + a.byteLength, 0);
+  var index = 0;
+  return arrays.reduce((result, a) => {
+    result.set(new Uint8Array(a), index);
+    index += a.byteLength;
+    return result;
+  }, new Uint8Array(size));
+}
+
+function HMAC(key) {
+  return window.crypto.subtle.importKey(
+    'raw',
     key,
-    UTF8.encode(NONCE_INFO + i)
-  );
+    HMAC_SHA256,
+    false,
+    ['sign']
+  )
+}
 
-  //   var base64 = btoa(
-  // new Uint8Array(currentNonce)
-  //   .reduce((data, byte) => data + String.fromCharCode(byte), '')
-  // );
-  // console.log(base64);
-  console.log(new Uint8Array(currentNonce).toString())
+async function HMAC_hash(key, input) {
+  const hmac = await HMAC(key);
+  return window.crypto.subtle.sign('HMAC', hmac, input)
+}
 
-  return currentNonce;
+async function HKDF_extract(salt, ikm) {
+  return HMAC_hash(salt, ikm);
+}
+
+async function HDKF_expand(prk, info, l) {
+  const input = concatArray([info, new Uint8Array([1])]);
+  const h = await HMAC_hash(prk, input);
+  return h.slice(0, l);
+}
+
+async function HKDF(salt, ikm, info, len) {
+  const x = await HKDF_extract(salt, ikm);
+  return HKDF_expand(x, info, len);
+}
+
+async function generateNonce(prk, index) {
+  return new Promise(async (resolve, reject) => {
+    const k = await HDKF_expand(prk, UTF8.encode('Content-Encoding: aes128gcm' + String.fromCharCode(index)), 16);
+    const nonce = await HDKF_expand(prk, UTF8.encode('Content-Encoding: nonce' + String.fromCharCode(index)), 12);
+    resolve([k, nonce]);
+  });
 }

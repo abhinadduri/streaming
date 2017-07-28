@@ -41,6 +41,18 @@ function fetchFile(url) {
   })
 }
 
+async function testNonce(i) {
+  const PRK = await generatePRK();
+  const earlierkey = await window.crypto.subtle.importKey(
+    'raw', PRK, hmac, false, ['sign']
+  );
+
+  let nonce = await generateNonce(key, i);
+  console.log(nonce);
+}
+
+testNonce(0)
+
 async function generateNonce(key, i) {
   const NONCE_INFO = 'Content-Encoding: nonce';
   let currentNonce = await window.crypto.subtle.sign(

@@ -3,7 +3,7 @@ var crypto = require('crypto');
 var base64 = require('base64url');
 
 var parameters = {
-  key: base64.encode(Buffer.from([1,2,3,4,5,6,1,2,3,4,5,6,1,2,3,4])),
+  key: base64.encode(Buffer.from([0xde,0xad,0xbe,0xef,0xde,0xad,0xbe,0xef,0xde,0xad,0xbe,0xef,0xde,0xad,0xbe,0xef])),
   salt: base64.encode(Buffer.from([1,2,3,4,5,6,1,2,3,4,5,6,1,2,3,4]))
 };
 
