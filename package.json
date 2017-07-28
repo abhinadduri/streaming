@@ -8,9 +8,12 @@
     "start": "node server.js"
   },
   "dependencies": {
+    "base64url": "^2.0.0",
     "body-parser": "^1.17.2",
     "connect-busboy": "0.0.2",
+    "crypto": "0.0.3",
     "express": "^4.15.3",
-    "express-ws": "^3.0.0"
+    "express-ws": "^3.0.0",
+    "http_ece": "^1.0.4"
   }
 }

@@ -15,20 +15,30 @@ app.listen(port, host);
 app.ws('/upload', function(ws, req) {
   let index = 0;
   let name = null;
+  let lastMsg = null;
   ws.on('message', function(msg) {
     if (index == 0) {
       name = msg;
     } else {
-      console.log(index);
+      lastMsg = msg;
       fs.appendFileSync(name, msg);
     }
     index ++;
   });
 
   ws.on('close', function() {
+    // console.log(lastMsg);
     console.log('closed')
   })
 });
+
+app.get('/download', function(req, res) {
+  res.sendFile(__dirname + '/download.html');
+})
+
+app.get('/assets/download/:id', function(req, res) {
+  res.sendFile(__dirname + '/' + req.params.id);
+})
 
 app.post('/upload', (req, res) => {
   req.pipe(req.busboy);
