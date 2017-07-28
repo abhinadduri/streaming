@@ -6,13 +6,13 @@ async function upload(event) {
   // use hardcoded values for testing
   const ikm = new Uint8Array([0xde,0xad,0xbe,0xef,0xde,0xad,0xbe,0xef,0xde,0xad,0xbe,0xef,0xde,0xad,0xbe,0xef]);
   const salt = new Uint8Array([1,2,3,4,5,6,1,2,3,4,5,6,1,2,3,4]);
-  const prk = await HKDF_extract(salt, ikm)
+  const prk = await HKDF_extract(salt, ikm);
   let offset = 0;
   let index = 0;
 
   const eventHandler = async function(readEvent) {
     if (offset >= size) {
-      socket.send(prk)
+      // socket.send(prk)
       socket.close();
       return;
     }
@@ -20,7 +20,7 @@ async function upload(event) {
     if (readEvent.target.error == null) {
       offset += chunkSize;
       const result = readEvent.target.result;
-      const [rawKey, nonce] = await generateNonce(prk, index);
+      const [rawKey, nonce] = await deriveKeyAndNonce(prk, index);
       const alg = { name: 'AES-GCM', iv: nonce };
       const key = await crypto.subtle.importKey('raw', rawKey, alg, false, ['encrypt']);
       const encrypted = await crypto.subtle.encrypt(alg, key, result);
@@ -96,7 +96,7 @@ async function HKDF(salt, ikm, info, len) {
   return HKDF_expand(x, info, len);
 }
 
-async function generateNonce(prk, index) {
+async function deriveKeyAndNonce(prk, index) {
   return new Promise(async (resolve, reject) => {
     const k = await HDKF_expand(prk, UTF8.encode('Content-Encoding: aes128gcm' + String.fromCharCode(index)), 16);
     const nonce = await HDKF_expand(prk, UTF8.encode('Content-Encoding: nonce' + String.fromCharCode(index)), 12);
